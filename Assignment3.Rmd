@@ -1,0 +1,205 @@
+---
+title: "ISLR2 Exercise 5.9 — Bootstrap on the Boston Housing Data"
+author: "Your Name"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    number_sections: false
+    theme: readable
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  message = FALSE,
+  warning = FALSE,
+  fig.align = "center"
+)
+```
+
+# Introduction
+
+This document works through Exercise 5.9 from *An Introduction to Statistical
+Learning with Applications in R* (James, Witten, Hastie, Tibshirani). We use the
+`Boston` housing data set from the `ISLR2` package and apply the bootstrap to
+estimate standard errors for the mean, median, and tenth percentile of `medv`
+(median value of owner-occupied homes, in thousands of dollars).
+
+> **Note.** Bootstrap results vary slightly with the random seed and package
+> version, so your exact standard errors may differ by a hundredth or two from
+> the numbers shown in the comments below.
+
+```{r libraries}
+library(ISLR2)
+library(boot)
+
+# Reproducibility
+set.seed(1)
+
+# Attach for convenience (medv can then be referenced directly)
+attach(Boston)
+```
+
+---
+
+# (a) Estimate of the population mean
+
+The natural estimate of the population mean is the sample mean.
+
+```{r part-a}
+mu.hat <- mean(medv)
+mu.hat
+```
+
+So $\hat{\mu} \approx 22.53$ (in thousands of dollars).
+
+---
+
+# (b) Standard error of $\hat{\mu}$ (formula)
+
+Using $\text{SE}(\hat{\mu}) = s / \sqrt{n}$:
+
+```{r part-b}
+n <- length(medv)
+se.mu.hat <- sd(medv) / sqrt(n)
+se.mu.hat
+```
+
+**Interpretation.** $\text{SE}(\hat{\mu}) \approx 0.409$. If we repeatedly drew
+samples of size `r n` from the population and computed the mean each time, those
+sample means would vary around the true mean with a standard deviation of about
+0.41. It quantifies the uncertainty in $\hat{\mu}$ as an estimate of the true
+population mean.
+
+---
+
+# (c) Standard error of $\hat{\mu}$ (bootstrap)
+
+```{r part-c}
+boot.fn <- function(data, index) {
+  mean(data[index])
+}
+
+set.seed(1)
+boot.mean <- boot(medv, boot.fn, R = 1000)
+boot.mean
+```
+
+The bootstrap standard error (≈ 0.41) is essentially identical to the
+formula-based estimate from part (b). This is reassuring: the bootstrap recovers
+the analytic answer without relying on the formula.
+
+```{r part-c-store}
+se.boot.mean <- sd(boot.mean$t)
+se.boot.mean
+```
+
+---
+
+# (d) 95% confidence interval
+
+Using the approximation $[\hat{\mu} - 2\,\text{SE}, \; \hat{\mu} + 2\,\text{SE}]$
+with the bootstrap standard error:
+
+```{r part-d}
+ci.boot <- c(mu.hat - 2 * se.boot.mean,
+             mu.hat + 2 * se.boot.mean)
+ci.boot
+
+# Compare with the t-based interval
+t.test(medv)
+```
+
+The two intervals are nearly identical (roughly `[21.71, 23.35]` from the
+bootstrap vs `[21.73, 23.34]` from `t.test`). The slight difference comes from
+using the round factor 2 rather than the exact $t$-quantile (≈ 1.965), plus
+bootstrap sampling variation.
+
+---
+
+# (e) Estimate of the population median
+
+```{r part-e}
+med.hat <- median(medv)
+med.hat
+```
+
+So $\hat{\mu}_{\text{med}} = 21.2$.
+
+---
+
+# (f) Standard error of the median (bootstrap)
+
+There is no simple closed-form standard error for the median, so the bootstrap
+is the practical tool.
+
+```{r part-f}
+boot.fn.med <- function(data, index) {
+  median(data[index])
+}
+
+set.seed(1)
+boot.med <- boot(medv, boot.fn.med, R = 1000)
+boot.med
+```
+
+**Comment.** $\text{SE}(\hat{\mu}_{\text{med}}) \approx 0.38$. The median (21.2)
+has a small standard error relative to its value — smaller even than the SE of
+the mean — so we have estimated it fairly precisely. This is valuable precisely
+because no easy formula exists.
+
+---
+
+# (g) Tenth percentile
+
+```{r part-g}
+mu.hat.0.1 <- quantile(medv, 0.1)
+mu.hat.0.1
+```
+
+So $\hat{\mu}_{0.1} = 12.75$.
+
+---
+
+# (h) Standard error of the tenth percentile (bootstrap)
+
+```{r part-h}
+boot.fn.0.1 <- function(data, index) {
+  quantile(data[index], 0.1)
+}
+
+set.seed(1)
+boot.0.1 <- boot(medv, boot.fn.0.1, R = 1000)
+boot.0.1
+```
+
+**Comment.** $\text{SE}(\hat{\mu}_{0.1}) \approx 0.48$. This is larger than the
+standard error of the mean or median. That is expected: tail quantiles are
+estimated from fewer effective observations near that point, so they are
+inherently noisier. Still, 0.48 is small relative to the estimate of 12.75, so
+the tenth percentile is estimated with reasonable precision.
+
+---
+
+# Summary
+
+```{r summary-table, echo=FALSE}
+summary_df <- data.frame(
+  Quantity = c("Mean (a)", "Median (e)", "10th percentile (g)"),
+  Estimate = c(round(mu.hat, 3),
+               round(med.hat, 3),
+               round(as.numeric(mu.hat.0.1), 3)),
+  `Bootstrap SE` = c(round(se.boot.mean, 3),
+                     round(sd(boot.med$t), 3),
+                     round(sd(boot.0.1$t), 3)),
+  check.names = FALSE
+)
+knitr::kable(summary_df, caption = "Point estimates and bootstrap standard errors for medv.")
+```
+
+```{r cleanup, include=FALSE}
+detach(Boston)
+```
